@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"medcon/internal/auth"
 	"medcon/internal/models"
@@ -19,6 +20,7 @@ type Handler struct {
 	MatchService     *service.MatchService
 	ChatService      *service.ChatService
 	AmbulanceService *service.AmbulanceService
+	VitalsService    *service.VitalsService
 	AdminService     *service.AdminService
 	JWTSecret        string
 }
@@ -790,4 +792,230 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	auth.JSON(w, http.StatusOK, map[string]string{"message": "Password has been reset successfully"})
+}
+
+// ── Vitals ──
+
+func (h *Handler) CreateVitals(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetUser(r)
+	if claims == nil {
+		auth.ErrorJSON(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	var req models.VitalsCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.PatientID == "" {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Patient ID is required")
+		return
+	}
+
+	// Validate pain level range
+	if req.PainLevel != nil && (*req.PainLevel < 0 || *req.PainLevel > 10) {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Pain level must be between 0 and 10")
+		return
+	}
+
+	// Validate oxygen saturation range
+	if req.OxygenSaturation != nil && (*req.OxygenSaturation < 0 || *req.OxygenSaturation > 100) {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Oxygen saturation must be between 0 and 100")
+		return
+	}
+
+	// Validate blood pressure ranges
+	if req.BloodPressureSystolic != nil && (*req.BloodPressureSystolic < 30 || *req.BloodPressureSystolic > 300) {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Systolic blood pressure must be between 30 and 300")
+		return
+	}
+	if req.BloodPressureDiastolic != nil && (*req.BloodPressureDiastolic < 20 || *req.BloodPressureDiastolic > 200) {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Diastolic blood pressure must be between 20 and 200")
+		return
+	}
+
+	vitals, err := h.VitalsService.CreateVitals(r.Context(), claims.UserID(), &req)
+	if err != nil {
+		auth.ErrorJSON(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	auth.JSON(w, http.StatusCreated, vitals)
+}
+
+func (h *Handler) GetVitals(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetUser(r)
+	if claims == nil {
+		auth.ErrorJSON(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	id := r.PathValue("id")
+	if id == "" {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Vitals ID is required")
+		return
+	}
+
+	vitals, err := h.VitalsService.GetVitals(r.Context(), id)
+	if err != nil {
+		auth.ErrorJSON(w, http.StatusInternalServerError, "Failed to get vitals")
+		return
+	}
+	if vitals == nil {
+		auth.ErrorJSON(w, http.StatusNotFound, "Vitals record not found")
+		return
+	}
+
+	auth.JSON(w, http.StatusOK, vitals)
+}
+
+func (h *Handler) UpdateVitals(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetUser(r)
+	if claims == nil {
+		auth.ErrorJSON(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	id := r.PathValue("id")
+	if id == "" {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Vitals ID is required")
+		return
+	}
+
+	var req models.VitalsUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Validate pain level range
+	if req.PainLevel != nil && (*req.PainLevel < 0 || *req.PainLevel > 10) {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Pain level must be between 0 and 10")
+		return
+	}
+
+	// Validate oxygen saturation range
+	if req.OxygenSaturation != nil && (*req.OxygenSaturation < 0 || *req.OxygenSaturation > 100) {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Oxygen saturation must be between 0 and 100")
+		return
+	}
+
+	vitals, err := h.VitalsService.UpdateVitals(r.Context(), id, &req)
+	if err != nil {
+		auth.ErrorJSON(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	auth.JSON(w, http.StatusOK, vitals)
+}
+
+func (h *Handler) DeleteVitals(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetUser(r)
+	if claims == nil {
+		auth.ErrorJSON(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	id := r.PathValue("id")
+	if id == "" {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Vitals ID is required")
+		return
+	}
+
+	if err := h.VitalsService.DeleteVitals(r.Context(), id); err != nil {
+		auth.ErrorJSON(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	auth.JSON(w, http.StatusOK, map[string]string{"message": "Vitals record deleted successfully"})
+}
+
+func (h *Handler) ListVitals(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetUser(r)
+	if claims == nil {
+		auth.ErrorJSON(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	patientID := r.URL.Query().Get("patient_id")
+	if patientID == "" {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Patient ID is required")
+		return
+	}
+
+	page := 1
+	limit := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	sortBy := r.URL.Query().Get("sort_by")
+	if sortBy == "" {
+		sortBy = "recorded_at"
+	}
+	sortOrder := r.URL.Query().Get("sort_order")
+	if sortOrder == "" {
+		sortOrder = "desc"
+	}
+
+	var dateFrom, dateTo *time.Time
+	if df := r.URL.Query().Get("date_from"); df != "" {
+		if parsed, err := time.Parse(time.RFC3339, df); err == nil {
+			dateFrom = &parsed
+		}
+	}
+	if dt := r.URL.Query().Get("date_to"); dt != "" {
+		if parsed, err := time.Parse(time.RFC3339, dt); err == nil {
+			dateTo = &parsed
+		}
+	}
+
+	query := &models.VitalsListQuery{
+		PatientID: patientID,
+		Page:      page,
+		Limit:     limit,
+		SortBy:    sortBy,
+		SortOrder: sortOrder,
+		DateFrom:  dateFrom,
+		DateTo:    dateTo,
+	}
+
+	response, err := h.VitalsService.ListVitals(r.Context(), query)
+	if err != nil {
+		auth.ErrorJSON(w, http.StatusInternalServerError, "Failed to list vitals")
+		return
+	}
+
+	auth.JSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) GetLatestVitals(w http.ResponseWriter, r *http.Request) {
+	claims := auth.GetUser(r)
+	if claims == nil {
+		auth.ErrorJSON(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	patientID := r.URL.Query().Get("patient_id")
+	if patientID == "" {
+		auth.ErrorJSON(w, http.StatusBadRequest, "Patient ID is required")
+		return
+	}
+
+	vitals, err := h.VitalsService.GetLatestVitals(r.Context(), patientID)
+	if err != nil {
+		auth.ErrorJSON(w, http.StatusInternalServerError, "Failed to get latest vitals")
+		return
+	}
+
+	auth.JSON(w, http.StatusOK, vitals)
 }

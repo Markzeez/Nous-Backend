@@ -29,6 +29,7 @@ func main() {
 	matchRepo := repository.NewMatchRepository(mongoClient)
 	chatRepo := repository.NewChatRepository(mongoClient)
 	ambulanceRepo := repository.NewAmbulanceRepository(mongoClient)
+	vitalsRepo := repository.NewVitalsRepository(mongoClient)
 
 	// Initialize services
 	emailService := service.NewEmailService(cfg)
@@ -49,6 +50,7 @@ func main() {
 	userService.SetMatchService(matchService)
 
 	ambulanceService := service.NewAmbulanceService(ambulanceRepo, userRepo)
+	vitalsService := service.NewVitalsService(vitalsRepo, userRepo)
 	adminService := service.NewAdminService(userRepo, postRepo, commentRepo, bookingRepo, matchRepo, ambulanceRepo)
 
 	// Initialize handlers
@@ -61,6 +63,7 @@ func main() {
 		MatchService:     matchService,
 		ChatService:      chatService,
 		AmbulanceService: ambulanceService,
+		VitalsService:    vitalsService,
 		AdminService:     adminService,
 		JWTSecret:        cfg.JWTSecret,
 	}
@@ -118,6 +121,14 @@ func main() {
 	mux.Handle("POST /api/ambulance", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.DispatchAmbulance)))
 	mux.Handle("GET /api/ambulance", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.ListDispatches)))
 	mux.Handle("PATCH /api/ambulance", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.UpdateDispatch)))
+
+	// Vitals
+	mux.Handle("POST /api/vitals", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.CreateVitals)))
+	mux.Handle("GET /api/vitals", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.ListVitals)))
+	mux.Handle("GET /api/vitals/latest", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.GetLatestVitals)))
+	mux.Handle("GET /api/vitals/{id}", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.GetVitals)))
+	mux.Handle("PATCH /api/vitals/{id}", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.UpdateVitals)))
+	mux.Handle("DELETE /api/vitals/{id}", auth.Middleware(cfg.JWTSecret)(http.HandlerFunc(handler.DeleteVitals)))
 
 	corsHandler := withCORS(cfg.FrontendURL, mux)
 

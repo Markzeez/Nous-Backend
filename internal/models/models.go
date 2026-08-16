@@ -134,6 +134,151 @@ type AmbulanceDispatch struct {
 	Patient          *User     `json:"patient,omitempty" bson:"-"`
 }
 
+// ========== VITALS MODELS ==========
+
+// LevelOfConsciousness represents the patient's level of consciousness
+// Alert, Confused, Drowsy, Unconscious (AVPU or similar scale)
+type LevelOfConsciousness string
+
+const (
+	LOCAlert       LevelOfConsciousness = "ALERT"
+	LOCConfused    LevelOfConsciousness = "CONFUSED"
+	LOCDrowsy      LevelOfConsciousness = "DROWSY"
+	LOCUnconscious LevelOfConsciousness = "UNCONSCIOUS"
+)
+
+// BloodGlucoseUnit represents the unit for blood glucose measurement
+type BloodGlucoseUnit string
+
+const (
+	BGUnitMgDl  BloodGlucoseUnit = "MG_DL"
+	BGUnitMmolL BloodGlucoseUnit = "MMOL_L"
+)
+
+// Vitals represents a patient's vital signs recorded during a visit
+type Vitals struct {
+	ID             string `json:"id" bson:"_id"`
+	PatientID      string `json:"patient_id" bson:"patient_id"`
+	RecordedBy     string `json:"recorded_by" bson:"recorded_by"`
+	RecordedByName string `json:"recorded_by_name" bson:"recorded_by_name"`
+	RecordedByRole string `json:"recorded_by_role" bson:"recorded_by_role"`
+
+	// Core vitals
+	Temperature            *float64 `json:"temperature,omitempty" bson:"temperature,omitempty"`                           // °C
+	BloodPressureSystolic  *int     `json:"blood_pressure_systolic,omitempty" bson:"blood_pressure_systolic,omitempty"`   // mmHg
+	BloodPressureDiastolic *int     `json:"blood_pressure_diastolic,omitempty" bson:"blood_pressure_diastolic,omitempty"` // mmHg
+	HeartRate              *int     `json:"heart_rate,omitempty" bson:"heart_rate,omitempty"`                             // BPM
+	RespiratoryRate        *int     `json:"respiratory_rate,omitempty" bson:"respiratory_rate,omitempty"`                 // breaths/min
+	OxygenSaturation       *int     `json:"oxygen_saturation,omitempty" bson:"oxygen_saturation,omitempty"`               // SpO2 %
+
+	// Anthropometrics
+	Weight *float64 `json:"weight,omitempty" bson:"weight,omitempty"` // kg
+	Height *float64 `json:"height,omitempty" bson:"height,omitempty"` // cm
+	BMI    *float64 `json:"bmi,omitempty" bson:"bmi,omitempty"`       // auto-calculated
+
+	// Additional measurements
+	BloodGlucose         *float64             `json:"blood_glucose,omitempty" bson:"blood_glucose,omitempty"`
+	BloodGlucoseUnit     BloodGlucoseUnit     `json:"blood_glucose_unit,omitempty" bson:"blood_glucose_unit,omitempty"`
+	PainLevel            *int                 `json:"pain_level,omitempty" bson:"pain_level,omitempty"` // 0-10
+	LevelOfConsciousness LevelOfConsciousness `json:"level_of_consciousness,omitempty" bson:"level_of_consciousness,omitempty"`
+
+	// Notes
+	Notes string `json:"notes,omitempty" bson:"notes,omitempty"`
+
+	RecordedAt time.Time `json:"recorded_at" bson:"recorded_at"`
+	CreatedAt  time.Time `json:"created_at" bson:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at" bson:"updated_at"`
+
+	// Populated for responses
+	Patient *User `json:"patient,omitempty" bson:"-"`
+}
+
+// NewVitals creates a new vitals record with auto-calculated BMI
+func NewVitals(patientID, recordedBy, recordedByName, recordedByRole string) *Vitals {
+	now := time.Now()
+	return &Vitals{
+		ID:               uuid.New().String(),
+		PatientID:        patientID,
+		RecordedBy:       recordedBy,
+		RecordedByName:   recordedByName,
+		RecordedByRole:   recordedByRole,
+		RecordedAt:       now,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		BloodGlucoseUnit: BGUnitMgDl, // default
+	}
+}
+
+// CalculateBMI calculates BMI from weight (kg) and height (cm)
+func (v *Vitals) CalculateBMI() {
+	if v.Weight != nil && v.Height != nil && *v.Height > 0 {
+		heightM := *v.Height / 100.0 // convert cm to meters
+		bmi := *v.Weight / (heightM * heightM)
+		v.BMI = &bmi
+	}
+}
+
+// VitalsCreateRequest represents the request to create vitals
+type VitalsCreateRequest struct {
+	PatientID              string               `json:"patient_id"`
+	Temperature            *float64             `json:"temperature,omitempty"`
+	BloodPressureSystolic  *int                 `json:"blood_pressure_systolic,omitempty"`
+	BloodPressureDiastolic *int                 `json:"blood_pressure_diastolic,omitempty"`
+	HeartRate              *int                 `json:"heart_rate,omitempty"`
+	RespiratoryRate        *int                 `json:"respiratory_rate,omitempty"`
+	OxygenSaturation       *int                 `json:"oxygen_saturation,omitempty"`
+	Weight                 *float64             `json:"weight,omitempty"`
+	Height                 *float64             `json:"height,omitempty"`
+	BloodGlucose           *float64             `json:"blood_glucose,omitempty"`
+	BloodGlucoseUnit       BloodGlucoseUnit     `json:"blood_glucose_unit,omitempty"`
+	PainLevel              *int                 `json:"pain_level,omitempty"`
+	LevelOfConsciousness   LevelOfConsciousness `json:"level_of_consciousness,omitempty"`
+	Notes                  string               `json:"notes,omitempty"`
+	RecordedAt             *time.Time           `json:"recorded_at,omitempty"` // optional, defaults to now
+}
+
+// VitalsUpdateRequest represents the request to update vitals
+type VitalsUpdateRequest struct {
+	Temperature            *float64             `json:"temperature,omitempty"`
+	BloodPressureSystolic  *int                 `json:"blood_pressure_systolic,omitempty"`
+	BloodPressureDiastolic *int                 `json:"blood_pressure_diastolic,omitempty"`
+	HeartRate              *int                 `json:"heart_rate,omitempty"`
+	RespiratoryRate        *int                 `json:"respiratory_rate,omitempty"`
+	OxygenSaturation       *int                 `json:"oxygen_saturation,omitempty"`
+	Weight                 *float64             `json:"weight,omitempty"`
+	Height                 *float64             `json:"height,omitempty"`
+	BloodGlucose           *float64             `json:"blood_glucose,omitempty"`
+	BloodGlucoseUnit       BloodGlucoseUnit     `json:"blood_glucose_unit,omitempty"`
+	PainLevel              *int                 `json:"pain_level,omitempty"`
+	LevelOfConsciousness   LevelOfConsciousness `json:"level_of_consciousness,omitempty"`
+	Notes                  string               `json:"notes,omitempty"`
+}
+
+// VitalsListQuery represents query parameters for listing vitals
+type VitalsListQuery struct {
+	PatientID string
+	Page      int
+	Limit     int
+	SortBy    string // recorded_at, created_at
+	SortOrder string // asc, desc
+	DateFrom  *time.Time
+	DateTo    *time.Time
+}
+
+// VitalsResponse represents the response with vitals and patient info
+type VitalsResponse struct {
+	Vitals  *Vitals `json:"vitals"`
+	Patient *User   `json:"patient,omitempty"`
+}
+
+// VitalsListResponse represents paginated vitals list
+type VitalsListResponse struct {
+	Data  []*Vitals `json:"data"`
+	Total int64     `json:"total"`
+	Page  int       `json:"page"`
+	Limit int       `json:"limit"`
+}
+
 // --- Request / Response DTOs ---
 
 // ProfileRequest is submitted (via CompleteProfile) right after Supabase Auth
